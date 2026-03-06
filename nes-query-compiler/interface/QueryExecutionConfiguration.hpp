@@ -22,6 +22,7 @@
 #include <Configurations/BaseOption.hpp>
 #include <Configurations/Enums/EnumOption.hpp>
 #include <Configurations/ScalarOption.hpp>
+#include <Configurations/Validation/BooleanValidation.hpp>
 #include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
 #include <Util/ExecutionMode.hpp>
@@ -74,6 +75,11 @@ public:
            {std::make_shared<NumberValidation>()}};
 
     SliceCacheConfiguration sliceCacheConfiguration = {"slice_cache", "Configuration for the slice cache"};
+    BoolOption nljBloomFilterEnabled
+        = {"nlj_bloomfilter_enabled",
+           "false",
+           "Enable BloomFilter optimization for nested loop join probe.",
+           {std::make_shared<BooleanValidation>()}};
 
 private:
     std::vector<BaseOption*> getOptions() override
@@ -85,7 +91,8 @@ private:
             &numberOfRecordsPerKey,
             &maxNumberOfBuckets,
             &operatorBufferSize,
-            &sliceCacheConfiguration};
+            &sliceCacheConfiguration,
+            &nljBloomFilterEnabled};
     }
 };
 

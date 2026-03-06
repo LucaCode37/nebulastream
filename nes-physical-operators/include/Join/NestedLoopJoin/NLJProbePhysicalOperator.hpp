@@ -19,9 +19,12 @@
 #include <vector>
 #include <Functions/PhysicalFunction.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
+#include <Interface/Hash/BloomFilter.hpp>
+#include <Interface/Hash/BloomFilterRef.hpp>
 #include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Interface/Record.hpp>
 #include <Interface/RecordBuffer.hpp>
+#include <Join/NestedLoopJoin/NLJOperatorHandler.hpp>
 #include <Join/StreamJoinProbePhysicalOperator.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
@@ -41,8 +44,8 @@ public:
         const JoinSchema& joinSchema,
         std::shared_ptr<TupleBufferRef> leftMemoryProvider,
         std::shared_ptr<TupleBufferRef> rightMemoryProvider,
-        std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
-        std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames);
+        const std::vector<std::string>& leftKeyFieldNames,
+        const std::vector<std::string>& rightKeyFieldNames);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -52,14 +55,13 @@ protected:
         const PagedVectorRef& innerPagedVector,
         TupleBufferRef& outerMemoryProvider,
         TupleBufferRef& innerMemoryProvider,
-        const std::vector<Record::RecordFieldIdentifier>& outerKeyFieldNames,
-        const std::vector<Record::RecordFieldIdentifier>& innerKeyFieldNames,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
-        const nautilus::val<Timestamp>& windowEnd) const;
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<const Nautilus::Interface::BloomFilter*>& innerBloomFilterPtr) const;
     std::shared_ptr<TupleBufferRef> leftMemoryProvider;
     std::shared_ptr<TupleBufferRef> rightMemoryProvider;
-    std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames;
-    std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames;
+    std::vector<std::string> leftKeyFieldNames;
+    std::vector<std::string> rightKeyFieldNames;
 };
 }
