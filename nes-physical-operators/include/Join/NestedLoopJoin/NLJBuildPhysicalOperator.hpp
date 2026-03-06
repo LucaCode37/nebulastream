@@ -38,8 +38,14 @@ public:
         JoinBuildSideType joinBuildSide,
         std::unique_ptr<TimeFunction> timeFunction,
         std::shared_ptr<TupleBufferRef> bufferRef,
-        std::unique_ptr<SliceStoreRef> sliceStoreRef);
+        std::unique_ptr<SliceStoreRef> sliceStoreRef,
+        const std::vector<std::string>& joinKeyFieldNames,
+        bool bloomFilterEnabled);
 
     void execute(ExecutionContext& executionCtx, Record& record) const override;
+
+private:
+    std::vector<std::string> joinKeyFieldNames;
+    bool bloomFilterEnabled;
 };
 }

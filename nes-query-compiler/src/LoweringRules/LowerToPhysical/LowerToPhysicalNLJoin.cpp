@@ -113,6 +113,13 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
 
     auto [timeStampFieldLeft, timeStampFieldRight] = TimestampField::getTimestampLeftAndRight(*join, windowType);
 
+    // Extract join key field names for both sides - needed for BloomFilter hashing
+    auto leftJoinKeyFieldNames = getJoinFieldNames(leftInputSchema, logicalJoinFunction);
+    auto rightJoinKeyFieldNames = getJoinFieldNames(rightInputSchema, logicalJoinFunction);
+
+    // Read BloomFilter enabled flag from configuration
+    const bool bloomFilterEnabled = conf.nljBloomFilterEnabled.getValue();
+
     auto sliceAndWindowStore = std::make_unique<DefaultTimeBasedSliceStore>(
         windowType->getSize().getTime(), windowType->getSlide().getTime(), conf.sliceCacheConfiguration);
     auto sliceStoreRefLeft = sliceAndWindowStore->createSliceStoreRef(
@@ -132,12 +139,12 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
         },
         [](const WindowBasedOperatorHandler& handler) { return handler.getCreateNewSlicesFunction({}); });
 
-    auto handler = std::make_shared<NLJOperatorHandler>(inputOriginIds, outputOriginId, std::move(sliceAndWindowStore));
+    auto handler = std::make_shared<NLJOperatorHandler>(inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), bloomFilterEnabled);
 
-    const NLJBuildPhysicalOperator leftBuildOperator{
-        handlerId, JoinBuildSideType::Left, timeStampFieldLeft.toTimeFunction(), leftBufferRef, std::move(sliceStoreRefLeft)};
-    const NLJBuildPhysicalOperator rightBuildOperator{
-        handlerId, JoinBuildSideType::Right, timeStampFieldRight.toTimeFunction(), rightBufferRef, std::move(sliceStoreRefRight)};
+    auto leftBuildOperator = NLJBuildPhysicalOperator{
+        handlerId, JoinBuildSideType::Left, timeStampFieldLeft.toTimeFunction(), leftBufferRef, std::move(sliceStoreRefLeft), leftJoinKeyFieldNames, bloomFilterEnabled};
+    auto rightBuildOperator = NLJBuildPhysicalOperator{
+        handlerId, JoinBuildSideType::Right, timeStampFieldRight.toTimeFunction(), rightBufferRef, std::move(sliceStoreRefRight), rightJoinKeyFieldNames, bloomFilterEnabled};
 
     auto joinSchema = JoinSchema(leftInputSchema, rightInputSchema, outputSchema);
     auto probeOperator = NLJProbePhysicalOperator(
@@ -147,8 +154,8 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
         joinSchema,
         leftBufferRef,
         rightBufferRef,
-        getJoinFieldNames(leftInputSchema, logicalJoinFunction),
-        getJoinFieldNames(rightInputSchema, logicalJoinFunction));
+        leftJoinKeyFieldNames,
+        rightJoinKeyFieldNames);
 
     auto leftBuildWrapper = std::make_shared<PhysicalOperatorWrapper>(
         std::move(leftBuildOperator),
