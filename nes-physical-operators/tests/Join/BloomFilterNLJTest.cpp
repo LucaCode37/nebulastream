@@ -46,9 +46,9 @@ protected:
         bufferManager = BufferManager::create();
         schema = Schema{}.addField("id", DataType::Type::UINT64);
         
-        // Setup NautilusEngine for PagedVector operations
+        /// Set up NautilusEngine for PagedVector operations.
         nautilus::engine::Options options;
-        options.setOption("engine.Compilation", false); // Use interpreter for faster tests
+        options.setOption("engine.Compilation", false); /// Use the interpreter for faster tests.
         nautilusEngine = std::make_unique<nautilus::engine::NautilusEngine>(options);
     }
     
@@ -63,22 +63,19 @@ protected:
     std::unique_ptr<nautilus::engine::NautilusEngine> nautilusEngine;
 };
 
-/**
- * @brief Integration TEST: Verify BUILD phase creates accessible BloomFilter references
- *
- * Minimal integration coverage for NLJ + BloomFilter:
- * - create NLJSlice
- * - store tuples on both sides
- * - run combinePagedVectors()
- * - fetch BloomFilterRef for both build sides
- */
+/// Integration test that verifies the BUILD phase creates accessible BloomFilter references.
+/// Minimal integration coverage for NLJ + BloomFilter:
+/// - create NLJSlice
+/// - store tuples on both sides
+/// - run combinePagedVectors()
+/// - fetch BloomFilterRef for both build sides
 TEST_F(BloomFilterNLJTest, BuildPhase_BloomFilterRefAccess)
 {
     std::cout << "\nBUILD Phase Test: BloomFilterRef Access" << std::endl;
     
     NLJSlice slice(Timestamp(0), Timestamp(100), 1);
     
-    // Add tuples to both sides
+    /// Add tuples to both sides.
     const uint64_t tupleCount = 30;
     auto records = createMonotonicallyIncreasingValues(
         schema, MemoryLayoutType::ROW_LAYOUT, tupleCount, *bufferManager);
@@ -94,18 +91,36 @@ TEST_F(BloomFilterNLJTest, BuildPhase_BloomFilterRefAccess)
     TestUtils::runStoreTest(*rightPagedVector, schema, MemoryLayoutType::ROW_LAYOUT,
                             pageSize, projections, records, *nautilusEngine, *bufferManager);
     
+    /// Populate BloomFilters by adding hashes for each tuple.
+    for (uint64_t i = 0; i < tupleCount; ++i)
+    {
+        slice.addToBloomFilter(i, JoinBuildSideType::Left);
+        slice.addToBloomFilter(i, JoinBuildSideType::Right);
+    }
+    
     slice.combinePagedVectors();
     
-    // Get BloomFilterRef, this is what performNLJ() use
-    Nautilus::Interface::BloomFilterRef leftRef = slice.getBloomFilterRef(JoinBuildSideType::Left);
-    Nautilus::Interface::BloomFilterRef rightRef = slice.getBloomFilterRef(JoinBuildSideType::Right);
+    /// Verify BloomFilter pointers are valid.
+    const auto* leftBF = slice.getBloomFilter(JoinBuildSideType::Left);
+    const auto* rightBF = slice.getBloomFilter(JoinBuildSideType::Right);
+    ASSERT_NE(leftBF, nullptr);
+    ASSERT_NE(rightBF, nullptr);
+    ASSERT_GT(leftBF->sizeInBits(), 0);
+    ASSERT_GT(rightBF->sizeInBits(), 0);
     
-    std::cout << "BloomFilterRef for LEFT obtained" << std::endl;
-    std::cout << "BloomFilterRef for RIGHT obtained" << std::endl;
+    /// Verify no false negatives on the host side.
+    for (uint64_t i = 0; i < tupleCount; ++i)
+    {
+        ASSERT_TRUE(leftBF->mightContain(i)) << "Left BF false negative for key " << i;
+        ASSERT_TRUE(rightBF->mightContain(i)) << "Right BF false negative for key " << i;
+    }
+    
+    std::cout << "BloomFilter for LEFT: m=" << leftBF->sizeInBits() << " k=" << leftBF->hashFunctionCount() << std::endl;
+    std::cout << "BloomFilter for RIGHT: m=" << rightBF->sizeInBits() << " k=" << rightBF->hashFunctionCount() << std::endl;
     std::cout << "Ready for use in performNLJ() JIT-compiled code\n" << std::endl;
     
-    // We cannot evaluate BloomFilterRef.mightContain() directly here because it expects
-    // Nautilus val<uint64_t>. Accessing both refs without errors validates integration wiring.
+    /// We cannot evaluate BloomFilterRef.mightContain() directly here because it expects
+    /// Nautilus val<uint64_t>. Accessing both refs without errors validates integration wiring.
 }
 
 } // namespace NES

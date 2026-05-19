@@ -149,11 +149,6 @@ Nautilus::Interface::BloomFilter* NLJSlice::getBloomFilter(const JoinBuildSideTy
     std::unreachable();
 }
 
-Nautilus::Interface::BloomFilterRef NLJSlice::getBloomFilterRef(const JoinBuildSideType joinBuildSide) const
-{
-    return Nautilus::Interface::BloomFilterRef(getBloomFilter(joinBuildSide));
-}
-
 void NLJSlice::storeJoinKeyHash(const uint64_t hash, const JoinBuildSideType buildSide)
 {
     const std::scoped_lock lock(combinePagedVectorsMutex);

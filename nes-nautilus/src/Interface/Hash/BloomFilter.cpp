@@ -17,7 +17,7 @@
 #include <cmath>
 #include <cstdint>
 
-// Forward declaration of existing Murmur-style hash from MurMur3HashFunction.cpp
+/// Forward declaration of existing Murmur-style hash from MurMur3HashFunction.cpp.
 namespace NES {
 std::uint64_t hashBytes(void* data, std::uint64_t length);
 }
@@ -26,7 +26,7 @@ namespace NES::Nautilus::Interface {
 
 namespace {
 
-// small helper for ceil-division
+/// Small helper for ceil-division.
 inline std::size_t divRoundUp(std::size_t x, std::size_t y) {
     return (x + y - 1) / y;
 }
@@ -37,20 +37,20 @@ BloomFilter::BloomFilter(std::size_t expectedEntries, double falsePositiveRate)
     : bitCount(0)
     , hashCount(0) {
 
-    // Basic sanity checks and defaults
+    /// Basic sanity checks and defaults.
     if (expectedEntries == 0) {
         expectedEntries = 1;
     }
     if (falsePositiveRate <= 0.0 || falsePositiveRate >= 1.0) {
-        // default to 1% if user passes an invalid value
+        /// Default to 1% if the caller passes an invalid value.
         falsePositiveRate = 0.01;
     }
 
-    // Standard Bloom filter formulas:
-    //
-    //   m = -n * ln(p) / (ln(2)^2)
-    //   k = (m / n) * ln(2)
-    //
+    /// Standard Bloom filter formulas:
+    ///
+    ///   m = -n * ln(p) / (ln(2)^2)
+    ///   k = (m / n) * ln(2)
+    ///
     const double ln2 = std::log(2.0);
     const double mDouble =
         -static_cast<double>(expectedEntries) * std::log(falsePositiveRate) / (ln2 * ln2);
@@ -86,12 +86,12 @@ bool BloomFilter::getBit(std::size_t bitIndex) const {
 void BloomFilter::computeBaseHashes(KeyType key,
                                     std::uint64_t& h1,
                                     std::uint64_t& h2) const {
-    // Use existing Murmur-style hash for the bytes of the key.
-    // hashBytes takes a non-const void* pointer.
+    /// Use the existing Murmur-style hash for the key bytes.
+    /// hashBytes takes a non-const void* pointer.
     auto mutableKey = key;
     h1 = ::NES::hashBytes(static_cast<void*>(&mutableKey), static_cast<std::uint64_t>(sizeof(KeyType)));
 
-    // Derive a second hash value from h1 (mixing function similar to robin-hood hashing).
+    /// Derive a second hash value from h1.
     h2 = h1;
     h2 ^= (h2 >> 33);
     h2 *= 0xff51afd7ed558ccdULL;
@@ -99,9 +99,9 @@ void BloomFilter::computeBaseHashes(KeyType key,
     h2 *= 0xc4ceb9fe1a85ec53ULL;
     h2 ^= (h2 >> 33);
 
-    // Avoid h2 == 0 to prevent all combined hashes becoming identical.
+    /// Avoid h2 == 0 so that combined hashes do not collapse.
     if (h2 == 0) {
-        h2 = 0x9e3779b97f4a7c15ULL; // arbitrary odd constant
+        h2 = 0x9e3779b97f4a7c15ULL; /// Arbitrary odd constant.
     }
 }
 
@@ -128,11 +128,11 @@ bool BloomFilter::mightContain(KeyType key) const {
         const std::size_t bitIndex =
             static_cast<std::size_t>(combined % static_cast<std::uint64_t>(bitCount));
         if (!getBit(bitIndex)) {
-            // one bit is 0 -> key definitely not present (FILTERED)
+            /// One bit is 0, so the key is definitely not present.
             return false;
         }
     }
-    // all bits are 1 -> key might be present (PASSED - could be false positive)
+    /// All bits are 1, so the key might be present.
     return true;
 }
 
