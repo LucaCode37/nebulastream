@@ -113,11 +113,11 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
 
     auto [timeStampFieldLeft, timeStampFieldRight] = TimestampField::getTimestampLeftAndRight(*join, windowType);
 
-    // Extract join key field names for both sides - needed for BloomFilter hashing
+    /// Extract join key field names for both sides - needed for BloomFilter hashing
     auto leftJoinKeyFieldNames = getJoinFieldNames(leftInputSchema, logicalJoinFunction);
     auto rightJoinKeyFieldNames = getJoinFieldNames(rightInputSchema, logicalJoinFunction);
 
-    // Read BloomFilter enabled flag from configuration
+    /// Read BloomFilter enabled flag from configuration
     const bool bloomFilterEnabled = conf.nljBloomFilterEnabled.getValue();
 
     auto sliceAndWindowStore = std::make_unique<DefaultTimeBasedSliceStore>(
@@ -155,7 +155,8 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
         leftBufferRef,
         rightBufferRef,
         leftJoinKeyFieldNames,
-        rightJoinKeyFieldNames);
+        rightJoinKeyFieldNames,
+        bloomFilterEnabled);
 
     auto leftBuildWrapper = std::make_shared<PhysicalOperatorWrapper>(
         std::move(leftBuildOperator),

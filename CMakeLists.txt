@@ -23,7 +23,6 @@ option(ENABLE_IWYU "Enable include-what-you-use suggestions (if found on the sys
 option(ENABLE_FTIME_TRACE "Enable ftime-trace as a compilation flag to profile the compiler" OFF)
 option(CODE_COVERAGE "Compute test coverage" OFF)
 option(NES_ENABLES_TESTS "Enable tests" ON)
-option(ENABLE_LARGE_TESTS "Runs testcases with larger input data" OFF)
 option(ENABLE_DOCKER_TESTS "Runs testcases that require docker" ON)
 
 option(NES_ENABLE_PRECOMPILED_HEADERS "Enable precompiled headers (might improve compilation time)" OFF)

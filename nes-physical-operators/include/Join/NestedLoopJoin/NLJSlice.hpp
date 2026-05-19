@@ -20,7 +20,6 @@
 #include <Identifiers/Identifiers.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <Nautilus/Interface/Hash/BloomFilter.hpp>
-#include <Nautilus/Interface/Hash/BloomFilterRef.hpp>
 #include <Nautilus/Interface/PagedVector/PagedVector.hpp>
 #include <Runtime/AbstractBufferProvider.hpp>
 #include <SliceStore/Slice.hpp>
@@ -55,14 +54,11 @@ public:
     /// Returns the BloomFilter for the specified join side (may be null if not built)
     [[nodiscard]] Nautilus::Interface::BloomFilter* getBloomFilter(JoinBuildSideType joinBuildSide) const;
 
-    /// Returns a Nautilus-native BloomFilterRef for use in JIT-compiled code.
-    [[nodiscard]] Nautilus::Interface::BloomFilterRef getBloomFilterRef(JoinBuildSideType joinBuildSide) const;
-
     /// This method is called from the BUILD phase for each inserted record
     void addToBloomFilter(uint64_t hash, JoinBuildSideType buildSide);
 
-    // TODO: Future optimization - currently unused but prepared for hash reuse
-    // in PROBE phase to avoid redundant hash computations
+    /// TODO: Future optimization.
+    /// Currently unused, but prepared for hash reuse in the PROBE phase to avoid redundant hash computations.
     /// Stores precomputed join-key hashes per side for later probe optimization.
     void storeJoinKeyHash(uint64_t hash, JoinBuildSideType buildSide);
 
@@ -87,7 +83,6 @@ private:
     std::unique_ptr<Nautilus::Interface::BloomFilter> leftBloomFilter;
     std::unique_ptr<Nautilus::Interface::BloomFilter> rightBloomFilter;
 
-    
     /// Metrics tracking pointer (optional, may be null)
     BloomFilterMetrics* bloomFilterMetrics;
 };

@@ -45,11 +45,14 @@ public:
         std::shared_ptr<TupleBufferRef> leftMemoryProvider,
         std::shared_ptr<TupleBufferRef> rightMemoryProvider,
         const std::vector<std::string>& leftKeyFieldNames,
-        const std::vector<std::string>& rightKeyFieldNames);
+        const std::vector<std::string>& rightKeyFieldNames,
+        bool bloomFilterEnabled = true);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
 protected:
+    /// Templated on the bloom filter type so that BloomFilterAlwaysTrue is optimized away at compile time.
+    template<typename BloomFilterT>
     void performNLJ(
         const PagedVectorRef& outerPagedVector,
         const PagedVectorRef& innerPagedVector,
@@ -58,10 +61,11 @@ protected:
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
         const nautilus::val<Timestamp>& windowEnd,
-        const nautilus::val<const Nautilus::Interface::BloomFilter*>& innerBloomFilterPtr) const;
+        const BloomFilterT& innerBloomFilter) const;
     std::shared_ptr<TupleBufferRef> leftMemoryProvider;
     std::shared_ptr<TupleBufferRef> rightMemoryProvider;
     std::vector<std::string> leftKeyFieldNames;
     std::vector<std::string> rightKeyFieldNames;
+    bool bloomFilterEnabled;
 };
 }

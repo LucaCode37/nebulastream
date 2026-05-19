@@ -88,7 +88,7 @@ SliceEnd getNLJSliceEndProxy(const EmittedNLJWindowTrigger* nljWindowTriggerTask
     std::unreachable();
 }
 
-// Proxy to get BloomFilter pointer from a slice 
+/// Proxy to get the BloomFilter pointer from a slice.
 const Nautilus::Interface::BloomFilter* getBloomFilterProxy(const NLJSlice* slice, JoinBuildSideType joinBuildSide)
 {
     PRECONDITION(slice != nullptr, "slice should not be null");
@@ -104,15 +104,18 @@ NLJProbePhysicalOperator::NLJProbePhysicalOperator(
     std::shared_ptr<TupleBufferRef> leftMemoryProvider,
     std::shared_ptr<TupleBufferRef> rightMemoryProvider,
     const std::vector<std::string>& leftKeyFieldNames,
-    const std::vector<std::string>& rightKeyFieldNames)
+    const std::vector<std::string>& rightKeyFieldNames,
+    bool bloomFilterEnabled)
     : StreamJoinProbePhysicalOperator(operatorHandlerId, std::move(joinFunction), WindowMetaData(std::move(windowMetaData)), joinSchema)
     , leftMemoryProvider(std::move(leftMemoryProvider))
     , rightMemoryProvider(std::move(rightMemoryProvider))
     , leftKeyFieldNames(leftKeyFieldNames)
     , rightKeyFieldNames(rightKeyFieldNames)
+    , bloomFilterEnabled(bloomFilterEnabled)
 {
 }
 
+template<typename BloomFilterT>
 void NLJProbePhysicalOperator::performNLJ(
     const PagedVectorRef& outerPagedVector,
     const PagedVectorRef& innerPagedVector,
@@ -121,19 +124,19 @@ void NLJProbePhysicalOperator::performNLJ(
     ExecutionContext& executionCtx,
     const nautilus::val<Timestamp>& windowStart,
     const nautilus::val<Timestamp>& windowEnd,
-    const nautilus::val<const Nautilus::Interface::BloomFilter*>& innerBloomFilterPtr) const
+    const BloomFilterT& innerBloomFilter) const
 {
     const auto outerFields = outerMemoryProvider.getAllFieldNames();
     const auto innerFields = innerMemoryProvider.getAllFieldNames();
 
-    // Determine which key field names to use for outer tuples
-    // Check if outer side is left or right by comparing memory provider addresses
+    /// Determine which key field names to use for outer tuples.
+    /// Check whether the outer side is left or right by comparing memory provider addresses.
     const auto& outerKeyFieldNames = (&outerMemoryProvider == leftMemoryProvider.get()) ? leftKeyFieldNames : rightKeyFieldNames;
     
     nautilus::val<uint64_t> outerItemPos(0);
     for (auto outerIt = outerPagedVector.begin(outerFields); outerIt != outerPagedVector.end(outerFields); ++outerIt)
     {
-        // Compute hash of outer tuple's join-key fields
+        /// Compute the hash of the outer tuple's join-key fields.
         std::vector<VarVal> outerJoinKeyValues;
         for (const auto& joinKeyFieldName : outerKeyFieldNames)
         {
@@ -145,17 +148,15 @@ void NLJProbePhysicalOperator::performNLJ(
         const HashFunction& hashFunction = murMur3HashFunction;
         const auto outerJoinKeyHash = hashFunction.calculate(outerJoinKeyValues);
         
-        // BloomFilter check: skip this outer tuple if inner BloomFilter says it's definitely not present
-        const Nautilus::Interface::BloomFilterRef innerBloomFilter(innerBloomFilterPtr);
+        /// Skip this outer tuple if the inner BloomFilter says it is definitely not present.
+        /// When BloomFilterT is BloomFilterAlwaysTrue, this check is optimized away.
         if (!innerBloomFilter.mightContain(outerJoinKeyHash))
         {
-            // BloomFilter says this outer tuple's join-key is definitely NOT in the inner side
-            // Skip the entire inner loop for this outer tuple
             ++outerItemPos;
             continue;
         }
         
-        // This outer tuple MIGHT match (BloomFilter says "maybe"),check inner tuples
+        /// This outer tuple might match, so probe the inner tuples.
         nautilus::val<uint64_t> innerItemPos(0);
         for (auto innerIt = innerPagedVector.begin(innerFields); innerIt != innerPagedVector.end(innerFields); ++innerIt)
         {
@@ -227,38 +228,50 @@ void NLJProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordBuffer
     const auto numberOfTuplesLeft = leftPagedVector.getNumberOfTuples();
     const auto numberOfTuplesRight = rightPagedVector.getNumberOfTuples();
 
-    /// Outer loop should have fewer tuples for better performance
-    /// Get BloomFilter from inner side to filter outer tuples
-    if (numberOfTuplesLeft < numberOfTuplesRight)
+    /// Outer loop should have fewer tuples for better performance.
+    /// Use BloomFilterRef when bloom filter is enabled, BloomFilterAlwaysTrue otherwise.
+    if (bloomFilterEnabled)
     {
-        // Left is outer, right is inner - use right's BloomFilter to filter left tuples
-        auto rightBloomFilterPtr = invoke(getBloomFilterProxy, sliceRefRight, nautilus::val<JoinBuildSideType>(JoinBuildSideType::Right));
-        
-        performNLJ(
-            leftPagedVector,
-            rightPagedVector,
-            *leftMemoryProvider,
-            *rightMemoryProvider,
-            executionCtx,
-            windowStart,
-            windowEnd,
-            rightBloomFilterPtr);
+        if (numberOfTuplesLeft < numberOfTuplesRight)
+        {
+            auto rightBloomFilterPtr = invoke(getBloomFilterProxy, sliceRefRight, nautilus::val<JoinBuildSideType>(JoinBuildSideType::Right));
+            const Nautilus::Interface::BloomFilterRef bloomFilter(rightBloomFilterPtr);
+            performNLJ(leftPagedVector, rightPagedVector, *leftMemoryProvider, *rightMemoryProvider,
+                       executionCtx, windowStart, windowEnd, bloomFilter);
+        }
+        else
+        {
+            auto leftBloomFilterPtr = invoke(getBloomFilterProxy, sliceRefLeft, nautilus::val<JoinBuildSideType>(JoinBuildSideType::Left));
+            const Nautilus::Interface::BloomFilterRef bloomFilter(leftBloomFilterPtr);
+            performNLJ(rightPagedVector, leftPagedVector, *rightMemoryProvider, *leftMemoryProvider,
+                       executionCtx, windowStart, windowEnd, bloomFilter);
+        }
     }
     else
     {
-        // Right is outer, left is inner - use left's BloomFilter to filter right tuples
-        auto leftBloomFilterPtr = invoke(getBloomFilterProxy, sliceRefLeft, nautilus::val<JoinBuildSideType>(JoinBuildSideType::Left));
-        
-        performNLJ(
-            rightPagedVector,
-            leftPagedVector,
-            *rightMemoryProvider,
-            *leftMemoryProvider,
-            executionCtx,
-            windowStart,
-            windowEnd,
-            leftBloomFilterPtr);
+        const Nautilus::Interface::BloomFilterAlwaysTrue noFilter;
+        if (numberOfTuplesLeft < numberOfTuplesRight)
+        {
+            performNLJ(leftPagedVector, rightPagedVector, *leftMemoryProvider, *rightMemoryProvider,
+                       executionCtx, windowStart, windowEnd, noFilter);
+        }
+        else
+        {
+            performNLJ(rightPagedVector, leftPagedVector, *rightMemoryProvider, *leftMemoryProvider,
+                       executionCtx, windowStart, windowEnd, noFilter);
+        }
     }
 }
+
+/// Explicit template instantiations for the two bloom filter variants.
+template void NLJProbePhysicalOperator::performNLJ<Nautilus::Interface::BloomFilterRef>(
+    const PagedVectorRef&, const PagedVectorRef&, TupleBufferRef&, TupleBufferRef&,
+    ExecutionContext&, const nautilus::val<Timestamp>&, const nautilus::val<Timestamp>&,
+    const Nautilus::Interface::BloomFilterRef&) const;
+
+template void NLJProbePhysicalOperator::performNLJ<Nautilus::Interface::BloomFilterAlwaysTrue>(
+    const PagedVectorRef&, const PagedVectorRef&, TupleBufferRef&, TupleBufferRef&,
+    ExecutionContext&, const nautilus::val<Timestamp>&, const nautilus::val<Timestamp>&,
+    const Nautilus::Interface::BloomFilterAlwaysTrue&) const;
 
 }
