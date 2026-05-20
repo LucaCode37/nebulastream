@@ -26,26 +26,21 @@ std::uint64_t hashBytes(void* data, std::uint64_t length);
 namespace NES::Nautilus::Interface
 {
 
-/// Proxy: returns the bit count of a BloomFilter (called once at construction time).
+// Proxy functions called via nautilus::invoke().
+// Hash proxies (h1, h2, bit read) use invoke because >> on val<uint64_t> emits arith.shrsi
+// (signed shift) in the Nautilus COMPILER backend, producing wrong results for values with
+// the high bit set.
+
 inline uint64_t getBitCountProxy(const BloomFilter* f) { return f->sizeInBits(); }
-/// Proxy: returns the hash function count (called once at construction time).
 inline uint64_t getHashCountProxy(const BloomFilter* f) { return f->hashFunctionCount(); }
 
-/// Proxy: compute h1 for key — identical to the hashBytes call in BloomFilter::add().
-///
-/// Using invoke here (rather than inlining MurMur2-64A as val<> code) is necessary because
-/// the Nautilus COMPILER backend generates arith.shrsi (arithmetic / signed right shift) for
-/// all >> operations on val<> types, including val<uint64_t>.  For hash values whose top bit
-/// is set this produces a sign-extended result instead of a zero-filled one, corrupting every
-/// intermediate hash word and producing entirely wrong bit positions.
+/// Mirrors the hashBytes() call in BloomFilter::add().
 inline uint64_t computeH1Proxy(uint64_t key)
 {
     return ::NES::hashBytes(&key, sizeof(uint64_t));
 }
 
-/// Proxy: compute h2 for key — identical to the h2 derivation in BloomFilter::add().
-///
-/// Computed on the host for the same reason as computeH1Proxy (arith.shrsi limitation).
+/// Mirrors the h2 derivation in BloomFilter::add().
 inline uint64_t computeH2Proxy(uint64_t key)
 {
     uint64_t h = ::NES::hashBytes(&key, sizeof(uint64_t));
@@ -60,24 +55,16 @@ inline uint64_t computeH2Proxy(uint64_t key)
     return h;
 }
 
-/// Proxy: test one bit position inside the filter's bit array.
-///
-/// The host-side right shift (data[word] >> offset) cannot be expressed as val<> code
-/// due to the arith.shrsi limitation — see computeH1Proxy for details.
+/// Reads one bit from the filter's bit array.
 inline uint64_t getBitProxy(const BloomFilter* f, uint64_t bitIndex)
 {
-    const uint64_t wordIndex = bitIndex / 64;
-    const uint64_t bitOffset = bitIndex % 64;
-    return (f->data()[wordIndex] >> bitOffset) & UINT64_C(1);
+    return (f->data()[bitIndex / 64] >> (bitIndex % 64)) & UINT64_C(1);
 }
 
-/// Nautilus-native wrapper around a BloomFilter with a JIT-compiled probe loop.
-///
-/// h1 and h2 are computed once via invoke so they exactly match BloomFilter::add().
-/// The double-hashing probe loop — combined = h1 + i*h2, bitIndex = combined % bitCount —
-/// runs entirely as JIT-generated code, giving the compiler full visibility over the
-/// address arithmetic.  Only the bit read itself requires an invoke call due to the
-/// arith.shrsi limitation in the Nautilus COMPILER backend.
+/// Nautilus wrapper around BloomFilter with a JIT-compiled probe loop.
+/// h1, h2, and the bit read use invoke (to work around the arith.shrsi bug).
+/// The double-hashing loop itself — combined = h1 + i*h2, bitIndex = combined % bitCount —
+/// runs as JIT code.
 class BloomFilterRef
 {
 public:
@@ -88,21 +75,17 @@ public:
     {
     }
 
-    /// Returns true if key might be in the set (false negatives are impossible).
     [[nodiscard]] nautilus::val<bool> mightContain(nautilus::val<uint64_t> key) const
     {
-        /// Compute h1 and h2 via invoke to match BloomFilter::add() exactly and
-        /// to avoid the arith.shrsi COMPILER limitation.
         nautilus::val<uint64_t> h1 = nautilus::invoke(computeH1Proxy, key);
         nautilus::val<uint64_t> h2 = nautilus::invoke(computeH2Proxy, key);
 
-        /// Probe all k hash positions — this loop runs entirely as JIT code.
         nautilus::val<uint64_t> allPresent(1);
         for (nautilus::val<uint64_t> i(0); i < hashCount; i = i + nautilus::val<uint64_t>(1))
         {
-            nautilus::val<uint64_t> combined   = h1 + i * h2;
-            nautilus::val<uint64_t> bitIndex   = combined % bitCount;
-            nautilus::val<uint64_t> bit        = nautilus::invoke(getBitProxy, filterRef, bitIndex);
+            nautilus::val<uint64_t> combined = h1 + i * h2;
+            nautilus::val<uint64_t> bitIndex = combined % bitCount;
+            nautilus::val<uint64_t> bit      = nautilus::invoke(getBitProxy, filterRef, bitIndex);
             allPresent = allPresent & bit;
         }
 
@@ -110,13 +93,12 @@ public:
     }
 
 private:
-    nautilus::val<const BloomFilter*> filterRef;  ///< passed to getBitProxy
+    nautilus::val<const BloomFilter*> filterRef;
     nautilus::val<uint64_t>           bitCount;
     nautilus::val<uint64_t>           hashCount;
 };
 
-/// A BloomFilter variant that always returns true (i.e., never filters anything).
-/// Used when BloomFilter is disabled so we avoid null-pointer checks in JIT code.
+/// BloomFilter variant that always returns true — used when the filter is disabled.
 class BloomFilterAlwaysTrue
 {
 public:
