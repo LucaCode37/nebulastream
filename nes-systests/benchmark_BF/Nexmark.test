@@ -10,10 +10,10 @@ CREATE LOGICAL SOURCE auction(timestamp UINT64, id INT32, initialbid INT32, rese
 CREATE PHYSICAL SOURCE FOR auction TYPE File;
 ATTACH FILE large/nexmark/auction_modified_74M.csv
 
-CREATE SINK q1CheckSum(price FLOAT64)  TYPE Checksum;
-CREATE SINK q2CheckSum(bid.timestamp UINT64, bid.auctionId INT32, bid.bidder INT32, bid.datetime INT64, bid.price FLOAT64)  TYPE Checksum;
-CREATE SINK q5Checksum(bidbid.start UINT64, bidbid.end UINT64, bid.auctionId INT32, bid.num UINT64, bid.max_tmp UINT64)  TYPE Checksum;
-CREATE SINK q8VariantChecksum(bidauction.start UINT64, bidauction.end UINT64, bid_timestamp UINT64, bid.auctionId INT32, bid.bidder INT32, bid.datetime INT64, bid.price FLOAT64, auction_timestamp UINT64, auction.id INT32, auction.initialbid INT32, auction.reserve INT32, auction.expires INT64, auction.seller INT32, auction.category INT32)  TYPE Checksum;
+CREATE SINK q1CheckSum(price FLOAT64 NOT NULL)  TYPE Checksum;
+CREATE SINK q2CheckSum(bid.timestamp UINT64 NOT NULL, bid.auctionId INT32 NOT NULL, bid.bidder INT32 NOT NULL, bid.datetime INT64 NOT NULL, bid.price FLOAT64 NOT NULL)  TYPE Checksum;
+CREATE SINK q5Checksum(bidbid.start UINT64 NOT NULL, bidbid.end UINT64 NOT NULL, bid.auctionId INT32, bid.num UINT64, bid.max_tmp UINT64)  TYPE Checksum;
+CREATE SINK q8VariantChecksum(bidauction.start UINT64 NOT NULL, bidauction.end UINT64 NOT NULL, bid_timestamp UINT64, bid.auctionId INT32, bid.bidder INT32, bid.datetime INT64, bid.price FLOAT64, auction_timestamp UINT64, auction.id INT32, auction.initialbid INT32, auction.reserve INT32, auction.expires INT64, auction.seller INT32, auction.category INT32)  TYPE Checksum;
 
 # Query 0
 SELECT * FROM bid INTO q2CheckSum;

@@ -14,6 +14,7 @@
 #include <Join/NestedLoopJoin/NLJBuildPhysicalOperator.hpp>
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <Identifiers/Identifiers.hpp>
 #include <Join/NestedLoopJoin/NLJOperatorHandler.hpp>
@@ -52,6 +53,26 @@ void addJoinKeyHashToSliceProxy(NLJSlice* nljSlice, const uint64_t hash, const J
 {
     PRECONDITION(nljSlice != nullptr, "nlj slice pointer should not be null!");
     nljSlice->addToBloomFilter(hash, joinBuildSide);
+}
+
+/// Proxy to retrieve the NLJSlice* for a given timestamp.
+/// Slices already exist at this point (created by sliceStoreRef->getDataStructureRef above).
+NLJSlice* getNLJSliceForTimestampProxy(OperatorHandler* ptrOpHandler, const Timestamp timestamp)
+{
+    PRECONDITION(ptrOpHandler != nullptr, "Operator handler pointer should not be null!");
+    auto* handler = dynamic_cast<NLJOperatorHandler*>(ptrOpHandler);
+    PRECONDITION(handler != nullptr, "Operator handler must be an NLJOperatorHandler!");
+    auto& sliceStore = handler->getSliceAndWindowStore();
+    const auto slices = sliceStore.getSlicesOrCreate(timestamp, handler->getCreateNewSlicesFunction({}));
+    for (const auto& slice : slices)
+    {
+        if (slice->getSliceStart() <= timestamp && timestamp < slice->getSliceEnd())
+        {
+            return dynamic_cast<NLJSlice*>(slice.get());
+        }
+    }
+    PRECONDITION(false, "No NLJSlice found for timestamp " + std::to_string(timestamp.getRawValue()));
+    return nullptr;
 }
 
 NLJBuildPhysicalOperator::NLJBuildPhysicalOperator(
@@ -100,6 +121,7 @@ void NLJBuildPhysicalOperator::execute(ExecutionContext& executionCtx, Record& r
         const HashFunction& hashFunction = murMur3HashFunction;
         const auto joinKeyHash = hashFunction.calculate(joinKeyValues);
 
+        const auto sliceReference = invoke(getNLJSliceForTimestampProxy, operatorHandler, timestamp);
         invoke(addJoinKeyHashToSliceProxy, sliceReference, joinKeyHash, nautilus::val<JoinBuildSideType>(joinBuildSide));
     }
 }
