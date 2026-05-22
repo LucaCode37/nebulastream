@@ -126,7 +126,7 @@ void NLJSlice::combinePagedVectors(const bool bloomFilterEnabled)
     if (bloomFilterEnabled)
     {
         
-        // Track BloomFilter creation in metrics (BUILD phase tracking)
+        /// Track BloomFilter creation in metrics (BUILD phase tracking)
         if (bloomFilterMetrics && (leftBloomFilter || rightBloomFilter)) {
             NES_INFO("BloomFilter BUILD: leftBF={} bits, rightBF={} bits, slice=[{}, {}]",
                      leftBloomFilter ? leftBloomFilter->sizeInBits() : 0,
@@ -176,7 +176,7 @@ const std::vector<uint64_t>& NLJSlice::getRightJoinKeyHashes() const
 
 void NLJSlice::addToBloomFilter(const uint64_t hash, const JoinBuildSideType buildSide)
 {
-    // Initialize BloomFilters on first use (lazy initialization during BUILD phase)
+    /// Initialize BloomFilters on first use (lazy initialization during BUILD phase)
     constexpr double falsePositiveRate = 0.01;
     const std::scoped_lock lock(combinePagedVectorsMutex);
     
@@ -186,8 +186,8 @@ void NLJSlice::addToBloomFilter(const uint64_t hash, const JoinBuildSideType bui
             leftJoinKeyHashes.push_back(hash);
             if (!leftBloomFilter)
             {
-                // TODO: Improve for dynamic sizing: currently we start with a reasonable default size, but in the future we could use the number of inserted hashes to resize the BloomFilter dynamically during BUILD phase
-                // Estimate: start with reasonable size, will hold 100K elements
+                /// TODO: Improve for dynamic sizing: currently we start with a reasonable default size, but in the future we could use the number of inserted hashes to resize the BloomFilter dynamically during BUILD phase
+                /// Estimate: start with reasonable size, will hold 100K elements
                 leftBloomFilter = std::make_unique<Nautilus::Interface::BloomFilter>(100000, falsePositiveRate);
             }
             leftBloomFilter->add(hash);
